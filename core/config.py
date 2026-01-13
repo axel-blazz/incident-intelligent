@@ -3,7 +3,7 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     # App
-    APP_NAME: str = "Boomer"
+    APP_NAME: str = "Incident Intelligence Platform"
     PORT: int = 8000
 
     # Logging
