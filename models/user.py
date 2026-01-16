@@ -11,5 +11,5 @@ class User(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
     email = Column(String, unique=True, index=True, nullable=False)
     password_hash = Column(String, nullable=False)
-    role = Column(Enum("ADMIN", "ENGINEER", "VIEWER", name="user_roles"), nullable=False)
+    role = Column(String, nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: dt.now(timezone.utc))

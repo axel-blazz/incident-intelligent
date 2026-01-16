@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from api.auth import router as auth_router
+from api import incidents
 from core.config import settings as Config
 from core.logging import setup_logging
 import warnings
@@ -11,6 +12,7 @@ logger = setup_logging()
 app = FastAPI(title=Config.APP_NAME)
 
 app.include_router(auth_router)
+app.include_router(incidents.router)
 
 @app.get("/")
 def health():
