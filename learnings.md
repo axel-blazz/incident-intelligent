@@ -943,12 +943,12 @@ Only freeze events once you are sure:
 - Emission timing: always after DB commit
 - Freeze events only when downstream systems depend on them
 
-
 ---
 
 ## 🟦 Day 11 — Kafka Integration (Producer + Mental Model)
 
 ### What I built
+
 - Integrated Kafka as an event backbone
 - Replaced in-memory event dispatch with Kafka producer
 - Verified events using Kafka CLI consumer
@@ -959,11 +959,13 @@ Only freeze events once you are sure:
 ### Key concepts I learned
 
 #### 1. Kafka is NOT a queue — it is a log
+
 - Events are **appended** to a topic
 - Kafka does not “delete” messages after consumption
 - Consumers track their own progress via **offsets**
 
 This clarified why:
+
 - Multiple consumers can read the same event
 - Replaying events is possible
 - Kafka suits event-driven systems, not task queues
@@ -971,6 +973,7 @@ This clarified why:
 ---
 
 #### 2. Broker, Topic, Event (clear separation)
+
 - **Broker** → Kafka server that stores data
 - **Topic** → named append-only log (e.g. `incident.events`)
 - **Event** → immutable record (JSON payload)
@@ -980,6 +983,7 @@ Kafka itself does not understand my schema — it only stores bytes.
 ---
 
 #### 3. Why producers are simple (and consumers are hard)
+
 - Producer:
   - Serialize
   - Send
@@ -997,12 +1001,15 @@ Most complexity lives on the **consumer side**, not producer.
 ---
 
 #### 4. Why we designed consumers BEFORE writing code
+
 I learned that jumping straight to writing a consumer leads to:
+
 - Duplicate processing
 - Lost events
 - Infinite retry loops
 
 Designing first helped clarify:
+
 - When to commit offsets
 - Which failures are retryable
 - How unknown events should be handled
@@ -1010,7 +1017,9 @@ Designing first helped clarify:
 ---
 
 #### 5. Kafka CLI consumer is essential
+
 Using `kafka-console-consumer` taught me:
+
 - Kafka really stores events independently of my app
 - Events persist even if the API is stopped
 - Debugging Kafka is much easier via CLI than code
@@ -1020,12 +1029,14 @@ Using `kafka-console-consumer` taught me:
 ### Things I got stuck on (and resolved)
 
 #### ❌ Kafka/Zookeeper docker issues
+
 - Learned that Docker Desktop engine issues can prevent Kafka startup
 - Understood that Kafka infra must be stable before app debugging
 
 ---
 
 ### What I now understand clearly
+
 - Kafka = durable event log
 - Producers don’t guarantee processing — consumers do
 - Offsets are Kafka’s memory, not mine
@@ -1035,6 +1046,7 @@ Using `kafka-console-consumer` taught me:
 ## 🟦 Day 12 — Kafka Consumer & Worker Service
 
 ### What I built
+
 - A **separate worker process**
 - Kafka consumer with manual offset control
 - Event deserialization & validation
@@ -1046,7 +1058,9 @@ Using `kafka-console-consumer` taught me:
 ### Key concepts I learned
 
 #### 1. Worker ≠ FastAPI ≠ background task
+
 The worker is:
+
 - A long-running process
 - Started independently (`python consumer.py`)
 - Completely decoupled from the API
@@ -1056,22 +1070,28 @@ This clarified real async system architecture.
 ---
 
 #### 2. Offset = “How far the consumer group has safely progressed”
+
 Offsets are:
+
 - Numbers in Kafka partitions
 - Stored in Kafka’s internal `__consumer_offsets` topic
 - Tracked per **consumer group**
 
 Calling `consumer.commit()` tells Kafka:
+
 > “Everything up to this message is safely processed.”
 
 ---
 
 #### 3. Why auto-commit is dangerous
+
 With auto-commit:
+
 - Kafka may mark events as processed **before my code runs**
 - Crashes cause silent data loss
 
 Manual commit ensures:
+
 - At-least-once delivery
 - Crash safety
 - Predictable retries
@@ -1079,8 +1099,8 @@ Manual commit ensures:
 ---
 
 #### 4. Correct offset commit strategy
-I learned the correct pattern:
 
+I learned the correct pattern:
 
 - Commit only after success
 - No commit on handler failure
@@ -1089,9 +1109,11 @@ I learned the correct pattern:
 ---
 
 #### 5. Deserialization belongs in the consumer
+
 Kafka delivers **bytes**, not valid objects.
 
 I learned to:
+
 - Safely decode JSON
 - Reject malformed payloads
 - Validate minimum required fields
@@ -1100,9 +1122,11 @@ I learned to:
 ---
 
 #### 6. Event routing is my responsibility
+
 Kafka does not route events.
 
 Routing logic:
+
 - Based on `event_type`
 - Implemented via a handler map
 - Keeps consumer loop clean and readable
@@ -1112,6 +1136,7 @@ This avoids `if/else` chaos and makes the system extensible.
 ---
 
 #### 7. Retry behavior is controlled by commits
+
 I finally understood:
 
 - ❌ Crash before commit → Kafka retries
@@ -1125,7 +1150,9 @@ Retries are a **feature**, not a bug.
 ### Things I got stuck on (and resolved)
 
 #### ❌ “Does committing make sync code async?”
+
 Learned that:
+
 - Commit does NOT affect async behavior
 - It only affects Kafka’s replay logic
 - Sync handlers still block, but Kafka safety remains intact
@@ -1133,7 +1160,9 @@ Learned that:
 ---
 
 #### ❌ “Should everything be async?”
+
 Learned:
+
 - Kafka consumer loop can remain sync
 - Async DB/AI decisions are independent
 - Correctness > async hype
@@ -1141,7 +1170,9 @@ Learned:
 ---
 
 #### ❌ “Why commit unknown events?”
+
 Learned:
+
 - Unknown events are non-retryable
 - Not committing causes infinite reprocessing
 - Logging + commit is the correct behavior
@@ -1149,6 +1180,7 @@ Learned:
 ---
 
 ### What I now understand clearly
+
 - Kafka guarantees **delivery**, not processing
 - Offset commits define correctness
 - Worker stability matters more than speed
@@ -1159,14 +1191,281 @@ Learned:
 ## 🏁 Summary (Day 11–12)
 
 By the end of Day 12, I moved from:
+
 > “I can send events”
 
 to:
+
 > “I can safely process events in a distributed system.”
 
 I now understand:
+
 - Kafka internals at a practical level
 - Consumer groups and offsets
 - Failure handling patterns
 - Why event-driven systems are hard but powerful
 
+# 🟦 Day 13 — Redis Caching (Design, Providers & Invalidation)
+
+### Theme
+
+Introduce Redis as a **performance optimization layer** while maintaining DB as source of truth and clear separation of concerns.
+
+---
+
+### Question I had
+
+> "Can I just inject Redis like a DB session using `Depends()`?"
+
+### Why I was confused
+
+I thought all dependencies followed the same FastAPI pattern.
+
+### Explanation that helped
+
+DB sessions and Redis clients have different lifecycles:
+
+| Dependency     | Lifecycle   | Reason                            |
+| -------------- | ----------- | --------------------------------- |
+| DB Session     | Per request | Isolation, transactions, rollback |
+| Redis Client   | Per process | Stateless, long-lived connection  |
+| Kafka Producer | Per process | Infrastructure-level dependency   |
+
+Request-scoped dependencies use `yield` + `Depends()`.
+Process-scoped dependencies use **providers**.
+
+### Mental model
+
+> Different lifetimes require different patterns.
+
+---
+
+### Question I had
+
+> "Should I instantiate Redis in `__init__.py`?"
+
+### Why I was confused
+
+I wanted a central place to create all infrastructure.
+
+### Explanation that helped
+
+Instantiating at import time causes:
+
+- Side effects before app is ready
+- Test failures (Redis not available)
+- CLI scripts breaking unexpectedly
+
+Use **lazy providers** instead:
+
+```python
+# cache/provider.py
+_backend = None
+
+def get_cache_backend():
+  global _backend
+  if _backend is None:
+    _backend = RedisCacheBackend()
+  return _backend
+```
+
+This pattern works for:
+
+- Redis cache
+- Event dispatcher
+- Kafka producer
+
+### Mental model
+
+> Instantiate at use time, not import time.
+
+---
+
+### Question I had
+
+> "Why abstract the cache backend?"
+
+### Why I was confused
+
+Redis seemed simple enough to use directly in services.
+
+### Explanation that helped
+
+Abstraction enables:
+
+- Swap Redis → in-memory → mock for testing
+- No Redis imports in business logic
+- Graceful degradation in failures
+
+Services only know:
+
+```python
+cache.get(key)
+cache.set(key, value, ttl)
+cache.delete(key)
+```
+
+### Mental model
+
+> Abstract infrastructure, hide implementation.
+
+---
+
+### Question I had
+
+> "How do I handle UUIDs as cache keys?"
+
+### Why I was confused
+
+Redis keys are strings, but my IDs are UUID objects.
+
+### Explanation that helped
+
+Conversion happens at boundaries:
+
+- Domain logic: work with UUIDs
+- Cache layer: convert to strings
+- Backend: store strings
+
+```python
+cache_key = f"incident:{str(incident_id)}"
+```
+
+Backend remains generic and unaware of domain types.
+
+### Mental model
+
+> Type conversion at layer boundaries.
+
+---
+
+### Question I had
+
+> "When do we delete cached data?"
+
+### Why I was confused
+
+I thought TTL was enough.
+
+### Explanation that helped
+
+TTL is a **safety net**, not a strategy.
+
+Invalidate explicitly on:
+
+- Incident update
+- Log attachment
+- Incident delete
+
+```python
+save(db, incident)
+delete_from_cache(incident_id)
+```
+
+### Mental model
+
+> Writes invalidate. Reads populate.
+
+---
+
+### Question I had
+
+> "What is the correct order: DB → Cache → Events?"
+
+### Why I was confused
+
+I wasn't sure if ordering mattered.
+
+### Explanation that helped
+
+Always follow this order:
+
+1. Commit DB transaction
+2. Invalidate cache
+3. Emit event
+
+Why:
+
+- If DB fails → cache untouched (no stale data)
+- If cache fails → events still valid
+- Workers always see committed state
+
+### Mental model
+
+> Transactions first, side effects second.
+
+---
+
+### Question I had
+
+> "Does `save()` modify the object in place or create a copy?"
+
+### Why I was confused
+
+I wasn't sure if I needed to reload objects from DB.
+
+### Explanation that helped
+
+SQLAlchemy tracks the same Python object:
+
+- Modify: `incident_db.status = "CLOSED"`
+- Flush: `db.flush()` (validates)
+- Commit: `db.commit()` (persists)
+- Refresh: `db.refresh(incident_db)` (reload if needed)
+
+The same object is updated through the lifecycle. No copies unless explicitly created.
+
+### Mental model
+
+> SQLAlchemy tracks objects, not rows.
+
+---
+
+### Question I had
+
+> "Why can't I use read-through cache everywhere?"
+
+### Why I was confused
+
+Read-through cache seemed like a universal optimization.
+
+### Explanation that helped
+
+Read-through cache pattern:
+
+1. Try cache
+2. If miss → query DB
+3. Populate cache
+4. Return
+
+```python
+cached = get_from_cache(id)
+if cached:
+  return cached
+
+incident = get_from_db(id)
+set_in_cache(id, incident)
+return incident
+```
+
+Limits:
+
+- Only for reads that repeat
+- Not for frequently changing data
+- Cache never becomes source of truth
+
+### Mental model
+
+> Cache optimizes reads, DB ensures correctness.
+
+---
+
+## 🔑 Core Mental Models (Day 13)
+
+- DB sessions are request-scoped; Redis is process-scoped
+- Lazy providers prevent import-time side effects
+- Abstract infrastructure to enable testing
+- Invalidate explicitly when data changes
+- Transaction order: DB → Cache → Events
+- Same Python object tracks through SQLAlchemy lifecycle
+- Cache is optimization, never source of truth

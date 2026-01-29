@@ -7,7 +7,7 @@ from services.incident_log_service import incident_log_db_to_attached_event, inc
 from sqlalchemy.orm import Session
 from repositories.incident_repo import get_by_id, list_all, save, delete
 from events.incident_events import IncidentCreatedEvent
-from events import event_dispatcher
+from events.provider import get_event_dispatcher
 from cache.incident_cache import (
     get_incident_from_cache,
     set_incident_in_cache,
@@ -15,6 +15,8 @@ from cache.incident_cache import (
 )
 from uuid import uuid4
 from datetime import datetime, timezone
+
+event_dispatcher = get_event_dispatcher()
 
 
 VALID_STATUS_TRANSITIONS = {
@@ -95,7 +97,9 @@ def update_incident_service(
     if not incident_db:
         raise ValueError("Incident not found")
     incident_db = apply_incident_patch(incident_db, payload)
-    return save(db, incident_db)
+    save(db, incident_db)
+    delete_incident_from_cache(incident_id)
+    return incident_db
 
 
 def get_incident_service(db: Session, incident_id: UUID) -> IncidentDB:
@@ -120,6 +124,7 @@ def delete_incident_service(db: Session, incident_id: UUID) -> None:
     if not incident_db:
         raise ValueError("Incident not found")
     delete(db, incident_db)
+    delete_incident_from_cache(incident_id)
 
 
 def add_incident_log_service(
@@ -130,6 +135,7 @@ def add_incident_log_service(
         raise ValueError("Incident not found")
     incident_log_db = IncidentLogDB(incident_id=incident_id, message=message)
     incident_log_db = save_log(db, incident_log_db)
+    delete_incident_from_cache(incident_id)
     event = incident_log_db_to_attached_event(incident_log_db)
     event_dispatcher.emit(event)
     return incident_log_db
